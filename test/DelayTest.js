@@ -170,6 +170,11 @@ contract('Delay', ([rootAccount, ...accounts]) => {
             await delay.pauseExecution(0)
             await assertRevert(delay.pauseExecution(0), 'DELAY_CAN_NOT_PAUSE')
           })
+
+          it('reverts when pausing after script executionTime', async () => {
+            await timeTravel(web3)(INITIAL_DELAY + 1)
+            await assertRevert(delay.pauseExecution(0), 'DELAY_CAN_NOT_PAUSE')
+          })
         })
 
         describe('resumeExecution(uint256 _delayedScriptId)', () => {
@@ -241,11 +246,11 @@ contract('Delay', ([rootAccount, ...accounts]) => {
           })
 
           it('executes the script after execution is resumed', async () => {
-            await timeTravel(web3)(INITIAL_DELAY + 3)
-
+            await timeTravel(web3)(INITIAL_DELAY - 3)
             await delay.pauseExecution(0)
             await delay.resumeExecution(0)
 
+            await timeTravel(web3)(4)
             await delay.execute(0)
           })
 
@@ -258,10 +263,9 @@ contract('Delay', ([rootAccount, ...accounts]) => {
           })
 
           it('reverts when executing paused script', async () => {
-            await timeTravel(web3)(INITIAL_DELAY + 3)
-
             await delay.pauseExecution(0)
 
+            await timeTravel(web3)(INITIAL_DELAY + 3)
             await assertRevert(delay.execute(0), 'DELAY_CAN_NOT_EXECUTE')
           })
 

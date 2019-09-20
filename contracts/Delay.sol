@@ -36,6 +36,7 @@ contract Delay is AragonApp, IForwarder {
     event ExecutionPaused(uint256 scriptId);
     event ExecutionResumed(uint256 scriptId);
     event ExecutionCancelled(uint256 scriptId);
+    event ChangeExecutionDelay(uint256 executionDelay);
 
     modifier scriptExists(uint256 _scriptId) {
         require(delayedScripts[_scriptId].executionTime != 0, ERROR_NO_SCRIPT);
@@ -57,6 +58,8 @@ contract Delay is AragonApp, IForwarder {
     */
     function setExecutionDelay(uint256 _executionDelay) external auth(SET_DELAY_ROLE) {
         executionDelay = _executionDelay;
+
+        emit ChangeExecutionDelay(executionDelay);
     }
 
     /**
@@ -132,7 +135,7 @@ contract Delay is AragonApp, IForwarder {
     }
 
     function canPause(uint256 _scriptId) public view scriptExists(_scriptId) returns (bool) {
-        return !_isExecutionPaused(_scriptId);
+        return !_isExecutionPaused(_scriptId) && now < delayedScripts[_scriptId].executionTime;
     }
 
     function canResume(uint256 _scriptId) public view scriptExists(_scriptId) returns (bool) {

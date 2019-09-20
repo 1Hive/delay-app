@@ -90,6 +90,9 @@ contract Template is TemplateBase {
 
         acl.createPermission(root, delay, delay.SET_DELAY_ROLE(), root);
         acl.createPermission(ANY_ENTITY, delay, delay.DELAY_EXECUTION_ROLE(), root);
+        acl.createPermission(ANY_ENTITY, delay, delay.PAUSE_EXECUTION_ROLE(), root);
+        acl.createPermission(ANY_ENTITY, delay, delay.RESUME_EXECUTION_ROLE(), root);
+        acl.createPermission(ANY_ENTITY, delay, delay.CANCEL_EXECUTION_ROLE(), root);
 
         // Clean up permissions
         acl.grantPermission(root, dao, dao.APP_MANAGER_ROLE());
