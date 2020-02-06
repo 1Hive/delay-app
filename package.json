@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "description": "",
   "dependencies": {
-    "@aragon/os": "^4.2.1",
     "@aragon/apps-shared-minime": "^1.0.1",
     "@aragon/apps-token-manager": "2.1.0",
-    "@aragon/apps-voting": "2.1.0"
+    "@aragon/apps-voting": "2.1.0",
+    "@aragon/os": "^4.2.1",
+    "@aragon/truffle-config-v4": "^1.0.1"
   },
   "devDependencies": {
     "@aragon/cli": "^6.3.1",
@@ -28,7 +29,7 @@
     "ganache-cli": "^6.7.0",
     "prettier": "^1.18.2",
     "solidity-coverage": "^0.6.2",
-    "truffle": "^5.0.1"
+    "truffle": "^4.1.14"
   },
   "scripts": {
     "start": "npm run start:template",
