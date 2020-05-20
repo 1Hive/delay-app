@@ -4,6 +4,7 @@
   "description": "",
   "dependencies": {
     "@aragon/os": "^4.2.1",
+    "@aragon/apps-agreement": "0.1.0",
     "@aragon/apps-shared-minime": "^1.0.1",
     "@aragon/apps-token-manager": "2.1.0",
     "@aragon/apps-voting": "2.1.0"
