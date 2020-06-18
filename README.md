@@ -5,7 +5,9 @@
 
 The delay app enables Aragon organizations to require a configurable delay between when an intent is sent and when it is executed.
 
-#### 🚨 Security Review Status: [Contract audited](https://diligence.consensys.net/audits/2019/12/dandelion-organizations/)
+#### 🚨 Security Review Status: Not Audited
+[Contract audited](https://diligence.consensys.net/audits/2019/12/dandelion-organizations/) at a 
+[previous commit](https://github.com/1Hive/delay-app/tree/80db310f4e912a3813f4ef45208ffcd4c4198eaa)
 
 ## How does it work?
 

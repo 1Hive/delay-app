@@ -11,21 +11,6 @@
       "name": "Delay execution",
       "id": "DELAY_EXECUTION_ROLE",
       "params": []
-    },
-    {
-      "name": "Pause the script execution",
-      "id": "PAUSE_EXECUTION_ROLE",
-      "params": []
-    },
-    {
-      "name": "Resume the script execution",
-      "id": "RESUME_EXECUTION_ROLE",
-      "params": []
-    },
-    {
-      "name": "Cancel the script execution",
-      "id": "CANCEL_EXECUTION_ROLE",
-      "params": []
     }
   ],
   "environments": {

@@ -3,7 +3,8 @@
   "version": "1.1.0",
   "description": "",
   "dependencies": {
-    "@aragon/os": "^4.2.1",
+    "@aragon/os": "aragon/aragonOS#add_disputable_base_app",
+    "@aragon/apps-agreement": "0.1.0",
     "@aragon/apps-shared-minime": "^1.0.1",
     "@aragon/apps-token-manager": "2.1.0",
     "@aragon/apps-voting": "2.1.0"
@@ -11,6 +12,7 @@
   "devDependencies": {
     "@aragon/buidler-aragon": "^0.2.7",
     "@aragon/contract-test-helpers": "0.0.1",
+    "@aragon/staking": "^0.2.2",
     "@nomiclabs/buidler": "^1.0.2",
     "@nomiclabs/buidler-etherscan": "^1.2.0",
     "@nomiclabs/buidler-solhint": "^1.2.0",
@@ -29,7 +31,7 @@
     "devchain": "buidler node",
     "build": "cd app && npm run build",
     "lint": "buidler check && echo 'Lint complete.'",
-    "test": "buidler test --network buidlerevm",
+    "test": "TEST=true buidler test --network buidlerevm",
     "test:gas": "GAS_REPORTER=true npm run test",
     "coverage": "SOLIDITY_COVERAGE=true npm run test",
     "apm:publish:major": "buidler publish major",

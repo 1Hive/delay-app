@@ -4,44 +4,59 @@ import "@aragon/os/contracts/apps/AragonApp.sol";
 import "@aragon/os/contracts/common/IForwarder.sol";
 import "@aragon/os/contracts/lib/math/SafeMath64.sol";
 
+import "@aragon/os/contracts/apps/disputable/DisputableAragonApp.sol";
 
-contract Delay is AragonApp, IForwarder {
+/*
+TODO: Remove the below once UI is updated.
+Possible states displayed on UI:
+Active
+Paused (/challenged)
+Executable (using canExecute())
+Cancelled (by Agreements app)
+Executed
+*/
+
+contract Delay is DisputableAragonApp, IForwarder {
     using SafeMath64 for uint64;
 
-    bytes32 public constant SET_DELAY_ROLE = keccak256("SET_DELAY_ROLE");
-    bytes32 public constant DELAY_EXECUTION_ROLE = keccak256("DELAY_EXECUTION_ROLE");
-    bytes32 public constant PAUSE_EXECUTION_ROLE = keccak256("PAUSE_EXECUTION_ROLE");
-    bytes32 public constant RESUME_EXECUTION_ROLE = keccak256("RESUME_EXECUTION_ROLE");
-    bytes32 public constant CANCEL_EXECUTION_ROLE = keccak256("CANCEL_EXECUTION_ROLE");
+    /**
+        bytes32 public constant SET_DELAY_ROLE = keccak256("SET_DELAY_ROLE");
+        bytes32 public constant DELAY_EXECUTION_ROLE = keccak256("DELAY_EXECUTION_ROLE");
+    */
+    bytes32 public constant SET_DELAY_ROLE = 0x2b56821903fce674a357ec19f2dd583428c0cc74e6be302c348b3a3ffa5b4f66;
+    bytes32 public constant DELAY_EXECUTION_ROLE = 0x68a7ca9b0904e026378fb888f3be95ada2a0c0b11f58c40530c1a383c0f99ce9;
 
     string private constant ERROR_NO_SCRIPT = "DELAY_NO_SCRIPT";
-    string private constant ERROR_CAN_NOT_EXECUTE = "DELAY_CAN_NOT_EXECUTE";
-    string private constant ERROR_CAN_NOT_PAUSE = "DELAY_CAN_NOT_PAUSE";
-    string private constant ERROR_SCRIPT_EXECUTION_PASSED = "DELAY_SCRIPT_EXECUTION_PASSED";
-    string private constant ERROR_CAN_NOT_RESUME = "DELAY_CAN_NOT_RESUME";
-    string private constant ERROR_CAN_NOT_FORWARD = "DELAY_CAN_NOT_FORWARD";
+    string private constant ERROR_CANNOT_FORWARD = "DELAY_CANNOT_FORWARD";
+    string private constant ERROR_CANNOT_EXECUTE = "DELAY_CANNOT_EXECUTE";
+    string private constant ERROR_CANNOT_CLOSE = "DELAY_CANNOT_CLOSE";
+
+    enum DelayedScriptStatus {
+        Active,              // A delayed script that has been reported to Agreements
+        Paused,              // A delayed script that is being challenged by Agreements
+        Cancelled,           // A delayed script that has been cancelled by Agreements
+        Executed             // A delayed script that has been executed
+    }
 
     struct DelayedScript {
-        uint64 executionTime;
+        uint64 executionFromTime;
         uint64 pausedAt;
+        DelayedScriptStatus delayedScriptStatus;
         bytes evmCallScript;
+        uint256 actionId;
     }
 
     uint64 public executionDelay;
     uint256 public delayedScriptsNewIndex = 0;
-    mapping(uint256 => DelayedScript) public delayedScripts;
+    mapping (uint256 => DelayedScript) public delayedScripts;
 
-    event DelayedScriptStored(uint256 scriptId);
-    event ExecutionDelaySet(uint64 executionDelay);
-    event ExecutedScript(uint256 scriptId);
-    event ExecutionPaused(uint256 scriptId);
-    event ExecutionResumed(uint256 scriptId);
-    event ExecutionCancelled(uint256 scriptId);
-
-    modifier scriptExists(uint256 _scriptId) {
-        require(delayedScripts[_scriptId].executionTime != 0, ERROR_NO_SCRIPT);
-        _;
-    }
+    event ExecutionDelaySet(uint64 indexed executionDelay);
+    event DelayedScriptStored(uint256 indexed delayedScriptId, uint256 indexed actionId, bytes evmScript);
+    event ExecutionPaused(uint256 indexed delayedScriptId, uint256 indexed actionId);
+    event ExecutionResumed(uint256 indexed delayedScriptId, uint256 indexed actionId);
+    event ExecutionCancelled(uint256 indexed delayedScriptId, uint256 indexed actionId);
+    event AgreementActionClosed(uint256 indexed delayedScriptId, uint256 indexed actionId);
+    event ExecutedScript(uint256 indexed delayedScriptId, uint256 indexed actionId);
 
     /**
     * @notice Initialize the Delay app
@@ -63,107 +78,187 @@ contract Delay is AragonApp, IForwarder {
     }
 
     /**
-    * @notice Delays execution for `@transformTime(self.executionDelay(): uint)`
-    * @param _evmCallScript The script that can be executed after a delay
+    * @dev IDisputable interface conformance
     */
-    function delayExecution(bytes _evmCallScript) external auth(DELAY_EXECUTION_ROLE) returns (uint256) {
-        return _delayExecution(_evmCallScript);
+    function getDisputableAction(uint256 _delayedScriptId)
+        external view returns (uint64 endDate, bool challenged, bool finished)
+    {
+        DelayedScript storage delayedScript = delayedScripts[_delayedScriptId];
+        DelayedScriptStatus delayedScriptStatus = delayedScript.delayedScriptStatus;
+
+        endDate = delayedScript.executionFromTime;
+        challenged = delayedScriptStatus == DelayedScriptStatus.Paused;
+        finished = delayedScriptStatus == DelayedScriptStatus.Cancelled
+            || delayedScriptStatus == DelayedScriptStatus.Executed;
     }
 
+    /**
+    * @dev IDisputable interface conformance
+    */
+    function canChallenge(uint256 _delayedScriptId) external view returns (bool) {
+        return _canPause(delayedScripts[_delayedScriptId]);
+    }
+
+    /**
+    * @dev IDisputable interface conformance
+    */
+    function canClose(uint256 _delayedScriptId) external view returns (bool) {
+        return _canClose(delayedScripts[_delayedScriptId]);
+    }
+
+    /**
+    * @notice Delays execution for `@transformTime(self.executionDelay(): uint)`
+    * @param _context Information context for the script being scheduled
+    * @param _evmCallScript The script that can be executed after a delay
+    */
+    function delayExecution(bytes _context, bytes _evmCallScript) external auth(DELAY_EXECUTION_ROLE) returns (uint256) {
+        return _delayExecution(_context, _evmCallScript);
+    }
+
+    /**
+    * @dev IForwarder interface conformance
+    */
     function isForwarder() external pure returns (bool) {
         return true;
     }
 
     /**
-    * @notice Pause the script execution with ID `_delayedScriptId`
-    * @param _delayedScriptId The ID of the script execution to pause
+    * @dev IForwarder interface conformance
     */
-    function pauseExecution(uint256 _delayedScriptId) external auth(PAUSE_EXECUTION_ROLE) {
-        DelayedScript storage delayedScript = delayedScripts[_delayedScriptId];
-        require(!_isExecutionPaused(_delayedScriptId), ERROR_CAN_NOT_PAUSE);
-        require(getTimestamp64() < delayedScript.executionTime, ERROR_SCRIPT_EXECUTION_PASSED);
-
-        delayedScript.pausedAt = getTimestamp64();
-
-        emit ExecutionPaused(_delayedScriptId);
-    }
-
-    /**
-    * @notice Resume a paused script execution with ID `_delayedScriptId`
-    * @param _delayedScriptId The ID of the script execution to resume
-    */
-    function resumeExecution(uint256 _delayedScriptId) external auth(RESUME_EXECUTION_ROLE) {
-        require(_isExecutionPaused(_delayedScriptId), ERROR_CAN_NOT_RESUME);
-        DelayedScript storage delayedScript = delayedScripts[_delayedScriptId];
-
-        uint64 timePaused = getTimestamp64().sub(delayedScript.pausedAt);
-        delayedScript.executionTime = delayedScript.executionTime.add(timePaused);
-        delayedScript.pausedAt = 0;
-
-        emit ExecutionResumed(_delayedScriptId);
-    }
-
-    /**
-    * @notice Cancel script execution with ID `_delayedScriptId`
-    * @param _delayedScriptId The ID of the script execution to cancel
-    */
-    function cancelExecution(uint256 _delayedScriptId) external scriptExists(_delayedScriptId) auth(CANCEL_EXECUTION_ROLE) {
-        delete delayedScripts[_delayedScriptId];
-
-        emit ExecutionCancelled(_delayedScriptId);
-    }
-
-    /**
-    * @notice Execute the script with ID `_delayedScriptId`
-    * @param _delayedScriptId The ID of the script to execute
-    */
-    function execute(uint256 _delayedScriptId) external {
-        require(canExecute(_delayedScriptId), ERROR_CAN_NOT_EXECUTE);
-
-        DelayedScript memory delayedScript = delayedScripts[_delayedScriptId];
-        delete delayedScripts[_delayedScriptId];
-
-        runScript(delayedScript.evmCallScript, new bytes(0), new address[](0));
-        emit ExecutedScript(_delayedScriptId);
-    }
-
-    /**
-    * @notice Return whether a script with ID #`_scriptId` can be executed
-    * @param _scriptId The ID of the script to execute
-    */
-    function canExecute(uint256 _scriptId) public view returns (bool) {
-        bool withinExecutionWindow = getTimestamp64() > delayedScripts[_scriptId].executionTime;
-        bool isUnpaused = !_isExecutionPaused(_scriptId);
-
-        return withinExecutionWindow && isUnpaused;
-    }
-
     function canForward(address _sender, bytes) public view returns (bool) {
         return canPerform(_sender, DELAY_EXECUTION_ROLE, arr());
     }
 
     /**
     * @notice Delays execution for `@transformTime(self.executionDelay(): uint)`
+    * @dev IForwarder interface conformance
     * @param _evmCallScript The script that can be executed after a delay
     */
     function forward(bytes _evmCallScript) public {
-        require(canForward(msg.sender, _evmCallScript), ERROR_CAN_NOT_FORWARD);
-        _delayExecution(_evmCallScript);
+        require(canForward(msg.sender, _evmCallScript), ERROR_CANNOT_FORWARD);
+        _delayExecution(new bytes(0), _evmCallScript);
     }
 
-    function _isExecutionPaused(uint256 _scriptId) internal view scriptExists(_scriptId) returns (bool) {
-        return delayedScripts[_scriptId].pausedAt != 0;
+    /**
+    * @dev Challenge script execution, IDisputable interface conformance
+    * @param _delayedScriptId The ID of the script execution to challenge
+    */
+    function _onDisputableActionChallenged(uint256 _delayedScriptId, uint256 /* _challengeId */, address /* _challenger */)
+        internal
+    {
+        DelayedScript storage delayedScript = delayedScripts[_delayedScriptId];
+        delayedScript.pausedAt = getTimestamp64();
+        delayedScript.delayedScriptStatus = DelayedScriptStatus.Paused;
+
+        emit ExecutionPaused(_delayedScriptId, delayedScript.actionId);
     }
 
-    function _delayExecution(bytes _evmCallScript) internal returns (uint256) {
+    /**
+    * @dev Allow script execution, IDisputable interface conformance
+    * @param _delayedScriptId The ID of the script execution to allow
+    */
+    function _onDisputableActionAllowed(uint256 _delayedScriptId) internal {
+        DelayedScript storage delayedScript = delayedScripts[_delayedScriptId];
+        uint64 timePaused = getTimestamp64().sub(delayedScript.pausedAt);
+
+        delayedScript.executionFromTime = delayedScript.executionFromTime.add(timePaused);
+        delayedScript.pausedAt = 0;
+        delayedScript.delayedScriptStatus = DelayedScriptStatus.Active;
+
+        emit ExecutionResumed(_delayedScriptId, delayedScript.actionId);
+    }
+
+    /**
+    * @dev Reject script execution, IDisputable interface conformance
+    * @param _delayedScriptId The ID of the script execution to reject
+    */
+    function _onDisputableActionRejected(uint256 _delayedScriptId) internal {
+        DelayedScript storage delayedScript = delayedScripts[_delayedScriptId];
+
+        delayedScript.delayedScriptStatus = DelayedScriptStatus.Cancelled;
+
+        emit ExecutionCancelled(_delayedScriptId, delayedScript.actionId);
+    }
+
+    /**
+    * @dev Void script execution, IDisputable interface conformance
+    * @param _delayedScriptId The ID of the script execution to void
+    */
+    function _onDisputableActionVoided(uint256 _delayedScriptId) internal {
+        _onDisputableActionAllowed(_delayedScriptId);
+    }
+
+    /**
+    * @notice Execute the script with ID `_delayedScriptId`
+    * @param _delayedScriptId The ID of the script to execute
+    */
+    function execute(uint256 _delayedScriptId) external nonReentrant {
+        DelayedScript storage delayedScript = delayedScripts[_delayedScriptId];
+        require(_canExecute(delayedScript), ERROR_CANNOT_EXECUTE);
+
+        (,,,,,bool closed,,) = _ensureAgreement().getAction(delayedScript.actionId);
+        if (!closed) {
+            _closeAgreementAction(delayedScript.actionId);
+        }
+
+        delayedScript.delayedScriptStatus = DelayedScriptStatus.Executed;
+
+        address[] memory blacklist = new address[](1);
+        blacklist[0] = address(_getAgreement());
+        runScript(delayedScript.evmCallScript, new bytes(0), blacklist);
+
+        emit ExecutedScript(_delayedScriptId, delayedScript.actionId);
+    }
+
+    /**
+    * @notice Close agreement action with ID `_delayedScriptId`
+    * @param _delayedScriptId The ID of the script to close the agreement action of
+    */
+    function closeAgreementAction(uint256 _delayedScriptId) external {
+        DelayedScript storage delayedScript = delayedScripts[_delayedScriptId];
+
+        require(_canClose(delayedScript), ERROR_CANNOT_CLOSE);
+        _closeAgreementAction(delayedScript.actionId);
+
+        emit AgreementActionClosed(_delayedScriptId, delayedScript.actionId);
+    }
+
+    /**
+    * @notice Return whether a script with ID #`_scriptId` can be executed
+    * @param _delayedScriptId The ID of the script to execute
+    */
+    function canExecute(uint256 _delayedScriptId) public view returns (bool) {
+        return _canExecute(delayedScripts[_delayedScriptId]);
+    }
+
+    function _delayExecution(bytes _context, bytes _evmCallScript) internal returns (uint256) {
         uint256 delayedScriptIndex = delayedScriptsNewIndex;
         delayedScriptsNewIndex++;
 
-        delayedScripts[delayedScriptIndex] = DelayedScript(getTimestamp64().add(executionDelay), 0, _evmCallScript);
+        uint256 actionId = _newAgreementAction(delayedScriptIndex, _context, msg.sender);
+        delayedScripts[delayedScriptIndex] =
+            DelayedScript(getTimestamp64().add(executionDelay), 0, DelayedScriptStatus.Active, _evmCallScript, actionId);
 
-        emit DelayedScriptStored(delayedScriptIndex);
-
+        emit DelayedScriptStored(delayedScriptIndex, actionId, _evmCallScript);
         return delayedScriptIndex;
     }
 
+    function _canPause(DelayedScript storage _delayedScript) internal view returns (bool) {
+        bool outsideExecutionWindow = getTimestamp64() < _delayedScript.executionFromTime;
+        return _scriptExistsAndActive(_delayedScript) && outsideExecutionWindow;
+    }
+
+    function _canExecute(DelayedScript storage _delayedScript) internal view returns (bool) {
+        bool withinExecutionWindow = getTimestamp64() >= _delayedScript.executionFromTime;
+        return _scriptExistsAndActive(_delayedScript) && withinExecutionWindow;
+    }
+
+    function _canClose(DelayedScript storage _delayedScript) internal view returns (bool) {
+        return _canExecute(_delayedScript);
+    }
+
+    function _scriptExistsAndActive(DelayedScript storage _delayedScript) internal view returns (bool) {
+        return _delayedScript.executionFromTime != 0
+            && _delayedScript.delayedScriptStatus == DelayedScriptStatus.Active;
+    }
 }
